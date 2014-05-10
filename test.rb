@@ -6,8 +6,8 @@ require 'pp'
 
 class Iptables < Parslet::Parser
   # Bits
-  rule(:word)          { match['-\w\.\/\,\"'].repeat(1) }
-  rule(:words)         { (word >> space?).repeat }
+  rule(:word)          { match['\w\.\/,"-'].repeat(1) }
+  rule(:words)         { (word >> space?).repeat(1) }
   rule(:word?)         { word.maybe }
   rule(:integer)       { match['0-9'].repeat(1) }
   rule(:space)         { match('\s').repeat(1) }
@@ -28,6 +28,8 @@ class Iptables < Parslet::Parser
   rule(:argument)      { dash.repeat(1) >> word.repeat(1) }
   rule(:rule_word)     { words }
   rule(:rule_word?)    { rule_word.maybe }
+  rule(:space_or_end)  { space | any.absent? }
+  rule(:space_or_end?) { space_or_end.maybe }
 
   # Things
   rule(:tablename) { star >> word.repeat(1).as(:name) }
@@ -42,25 +44,19 @@ class Iptables < Parslet::Parser
   rule(:comment)   { str('#').repeat(1) >> any.repeat(0) }
   rule(:commit)    { str('COMMIT') }
 
+  rule(:rule)       { rule_piece.repeat(1).as(:rule) }
+  rule(:rule_piece) { (argument >> space_or_end? >> negation? >> space_or_end? >> rule_word? >> space_or_end).as(:piece) }
 
-  # -A INPUT ! -f
-  # "-A INPUT -p ! tcp"
-  rule(:rule)        { ( arg_word_space | arg_word | arg_neg_word |
-                         arg_neg_word_space | arg_word_neg_space | arg_space |
-                         arg ).as(:piece).repeat(1) }
-
-  root(:expression)
-  rule(:expression) { commit | tablename | chain | comment | rule | eol }
-
-  rule(:arg_word_space) { argument >> space >> rule_word >> space }
-  rule(:arg_word)       { argument >> space >> rule_word >> any.absent? }
-  rule(:arg_neg_word)   { argument >> space >> negation >> space >> rule_word >> any.absent? }
-  rule(:arg_neg_word_space) { argument >> space >> negation >> space >> rule_word >> space }
-  rule(:arg_word_neg_space) { argument >> space >> rule_word >> space >> negation >> space }
+  # This didn't work either.
+  rule(:rrule_piece)    { (arg_word | arg_neg_word | arg_word_neg | arg_space | arg).as(:piece) }
+  rule(:arg_word)       { argument >> space >> rule_word >> space_or_end }
+  rule(:arg_neg_word)   { argument >> space >> negation >> space >> rule_word >> space_or_end }
+  rule(:arg_word_neg)   { argument >> space >> rule_word >> space >> negation >> space_or_end }
   rule(:arg_space)      { argument >> space }
   rule(:arg)            { argument >> any.absent? }
 
-
+  rule(:expression) { commit | tablename | chain | comment | rule | eol }
+  root(:expression)
 end
 
 def parse(str)
@@ -71,6 +67,6 @@ end
 #stuff = File.read('./example')
 #pp parse(stuff)
 File.read('./example').each_line do |line|
-  puts line.strip.inspect
+  puts line.strip
   pp parse(line.strip)
 end
