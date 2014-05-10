@@ -6,7 +6,8 @@ require 'pp'
 
 class Iptables < Parslet::Parser
   # Bits
-  rule(:word)          { match['-\w\.\/\,'].repeat(1) }
+  rule(:word)          { match['-\w\.\/\,\"'].repeat(1) }
+  rule(:words)         { (word >> space?).repeat }
   rule(:word?)         { word.maybe }
   rule(:integer)       { match['0-9'].repeat(1) }
   rule(:space)         { match('\s').repeat(1) }
@@ -22,14 +23,14 @@ class Iptables < Parslet::Parser
   rule(:newline)       { str("\n") }
   rule(:eol)           { any.absent? | newline }
 
-  rule(:negation)      { space? >> str('!') >> space }
+  rule(:negation)      { str('!') }
   rule(:negation?)     { negation.maybe }
   rule(:argument)      { dash.repeat(1) >> word.repeat(1) }
-  rule(:rule_word)     { quote? >> any.repeat(1) >> quote? }
+  rule(:rule_word)     { words }
   rule(:rule_word?)    { rule_word.maybe }
 
   # Things
-  rule(:tablename) { star >> word.repeat(1).as(:name) >> eol }
+  rule(:tablename) { star >> word.repeat(1).as(:name) }
   rule(:chain)     { (colon >>
                      word.as(:name) >> space >>
                      (word.as(:policy) | dash) >> space >>
@@ -37,19 +38,29 @@ class Iptables < Parslet::Parser
                      word.as(:packet_counter) >>
                      colon >>
                      word.as(:byte_counter) >>
-                     right_bracket >> eol).as(:chain) }
-  rule(:comment)       { str('#').repeat(1) >> any.repeat(0) >> eol }
-  rule(:commit)        { str('COMMIT') >> eol }
+                     right_bracket ).as(:chain) }
+  rule(:comment)   { str('#').repeat(1) >> any.repeat(0) }
+  rule(:commit)    { str('COMMIT') }
 
-  # -A INPUT -p ! tcp
-  # -A INPUT -s 1.1.1.1 -p tcp -j ECN --ecn-tcp-remove
-  rule(:rule_piece) { argument >> negation? >> rule_word? >> negation? }
-  rule(:rule)       { rule_piece.repeat(1).as(:rule) }
+
+  # -A INPUT ! -f
+  # "-A INPUT -p ! tcp"
+  rule(:rule)        { ( arg_word_space | arg_word | arg_neg_word |
+                         arg_neg_word_space | arg_word_neg_space | arg_space |
+                         arg ).as(:piece).repeat(1) }
 
   root(:expression)
-  rule(:lines) { line.repeat }
-  rule(:line) { space.repeat >> expression >> eol }
   rule(:expression) { commit | tablename | chain | comment | rule | eol }
+
+  rule(:arg_word_space) { argument >> space >> rule_word >> space }
+  rule(:arg_word)       { argument >> space >> rule_word >> any.absent? }
+  rule(:arg_neg_word)   { argument >> space >> negation >> space >> rule_word >> any.absent? }
+  rule(:arg_neg_word_space) { argument >> space >> negation >> space >> rule_word >> space }
+  rule(:arg_word_neg_space) { argument >> space >> rule_word >> space >> negation >> space }
+  rule(:arg_space)      { argument >> space }
+  rule(:arg)            { argument >> any.absent? }
+
+
 end
 
 def parse(str)
@@ -60,6 +71,6 @@ end
 #stuff = File.read('./example')
 #pp parse(stuff)
 File.read('./example').each_line do |line|
-  puts line.inspect
-  pp parse(line)
+  puts line.strip.inspect
+  pp parse(line.strip)
 end
