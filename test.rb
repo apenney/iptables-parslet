@@ -20,12 +20,12 @@ class Iptables < Parslet::Parser
   rule(:right_bracket) { str(']') }
   rule(:quote)         { str('"') }
   rule(:quote?)        { quote.maybe }
-  rule(:newline)       { str("\n") }
   rule(:eol)           { any.absent? | newline }
+  rule(:newline)       { str("\n") }
 
   rule(:negation)      { str('!') }
   rule(:negation?)     { negation.maybe }
-  rule(:argument)      { dash.repeat(1) >> word.repeat(1) }
+  rule(:argument)      { dash.repeat(1) >> word.repeat(1) >> space_or_end }
   rule(:rule_word)     { words }
   rule(:rule_word?)    { rule_word.maybe }
   rule(:space_or_end)  { space | any.absent? }
@@ -44,8 +44,9 @@ class Iptables < Parslet::Parser
   rule(:comment)   { str('#').repeat(1) >> any.repeat(0) }
   rule(:commit)    { str('COMMIT') }
 
-  rule(:rule)       { rule_piece.repeat(1).as(:rule) }
-  rule(:rule_piece) { (argument >> space_or_end? >> negation? >> space_or_end? >> rule_word? >> space_or_end).as(:piece) }
+  rule(:rule)       { (rule_piece.repeat(1)).as(:rule) }
+  #rule(:rule_piece) { (argument >> space_or_end? >> negation? >> space_or_end? >> rule_word? >> space_or_end).as(:piece) }
+  rule(:rule_piece) { (argument >> any.repeat(1)).as(:piece) >> space_or_end }
 
   # This didn't work either.
   rule(:rrule_piece)    { (arg_word | arg_neg_word | arg_word_neg | arg_space | arg).as(:piece) }
@@ -59,6 +60,19 @@ class Iptables < Parslet::Parser
   root(:expression)
 end
 
+class TopLevel < Parslet::Parser
+  rule(:word)      { match['\S'].repeat(1) }
+  rule(:star)      { str('*') }
+  rule(:eol)       { str('\n').repeat(1) | any.absent? }
+
+  rule(:comment)   { str('#').repeat(1) >> any.repeat >> eol }
+  rule(:tablename) { (star >> any.repeat(1) >> str('COMMIT')).as(:tablename) }
+
+  rule(:rule)      { comment | tablename }
+  root(:rule)
+end
+
+
 def parse(str)
   iptables = Iptables.new
   iptables.parse_with_debug(str)
@@ -67,6 +81,8 @@ end
 #stuff = File.read('./example')
 #pp parse(stuff)
 File.read('./example').each_line do |line|
+  next if line[0..0] == '#'
+  next if line[0..4] == 'COMMIT'
   puts line.strip
   pp parse(line.strip)
 end
