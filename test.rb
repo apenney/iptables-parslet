@@ -60,29 +60,60 @@ class Iptables < Parslet::Parser
   root(:expression)
 end
 
-class TopLevel < Parslet::Parser
-  rule(:word)      { match['\S'].repeat(1) }
+class Parser < Parslet::Parser
+  rule(:line)      { match['^\n'] }
   rule(:star)      { str('*') }
-  rule(:eol)       { str('\n').repeat(1) | any.absent? }
+  rule(:eol)       { match["\n"] }
+  rule(:hashchar)  { str('#') }
+  rule(:commit)    { str('COMMIT') }
 
-  rule(:comment)   { str('#').repeat(1) >> any.repeat >> eol }
-  rule(:tablename) { (star >> any.repeat(1) >> str('COMMIT')).as(:tablename) }
+  rule(:comment)   { (hashchar.repeat(1) >> line.repeat(0) >> eol).as(:comment) }
+  rule(:table)     { ( line >> star >> match['^COMMIT'].repeat(1)).as(:tablename) }
 
-  rule(:rule)      { comment | tablename }
+  rule(:rule)      { table | eol | any.absent? }
   root(:rule)
+end
+
+class IpParser < Parslet::Parser
+  root(:firewall)
+
+  rule(:firewall)      { table.repeat(1).as(:firewall) >> eol }
+  rule(:table)         { (name.as(:name) >> (chain.repeat(1)).as(:chains) >> rule.repeat(1).as(:rules)).as(:table) >> commit }
+  rule(:name)          { star >> line >> eol }
+  rule(:chain)         { (colon >> word.as(:name) >> space >>
+                          word.as(:policy) >> space >>
+                         left_bracket >> integers.as(:packet_counter) >>
+                         colon >> integers.as(:byte_counter) >>
+                         right_bracket >> eol).as(:chain) }
+  rule(:rule)          { str("-") >> line >> eol }
+
+
+  rule(:commit)        { str('COMMIT') >> eol }
+  rule(:star)          { str('*') }
+  rule(:line)          { match['^\n'].repeat(1) }
+  rule(:eol)           { match["\n"] }
+  rule(:colon)         { str(':') }
+  rule(:word)          { match['\S'].repeat(1) }
+  rule(:space)         { match('\s').repeat(1) }
+  rule(:space?)        { space.maybe }
+  rule(:dash)          { str('-') }
+  rule(:left_bracket)  { str('[') }
+  rule(:right_bracket) { str(']') }
+  rule(:integers)      { match['0-9'].repeat(1) }
 end
 
 
 def parse(str)
-  iptables = Iptables.new
+  iptables = IpParser.new
   iptables.parse_with_debug(str)
 end
 
-#stuff = File.read('./example')
-#pp parse(stuff)
-File.read('./example').each_line do |line|
-  next if line[0..0] == '#'
-  next if line[0..4] == 'COMMIT'
-  puts line.strip
-  pp parse(line.strip)
-end
+stuff = File.read('./example').gsub(/^#.*\n/, '')
+#stuff = stuff.reject! {|l| l[0..0] == '#'}
+pp parse(stuff)
+#File.read('./example').each_line do |line|
+#  next if line[0..0] == '#'
+#  next if line[0..4] == 'COMMIT'
+#  puts line.strip
+#  pp parse(line.strip)
+#end
